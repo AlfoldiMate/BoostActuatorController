@@ -103,6 +103,8 @@ int main(void)
   MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
   
+  COMM_Data_Init();
+
   /* USER CODE END 2 */
 
   /* Infinite loop */

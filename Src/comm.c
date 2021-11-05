@@ -10,6 +10,15 @@
 /* Includes ------------------------------------------------------------------*/
 #include "comm.h"
 #include "eeprom.h"
+#include "tim.h"
+
+/* Configuration -------------------------------------------------------------*/
+
+// Virtual address vector for the eeprom emulation
+uint16_t VirtAddVarTab[2] = //NB_OF_VAR] = 
+{
+  0x0,
+};
 
 // --------------------------------------------------------------------------------------
 // ADDRESS      0           DEVICE COMMOUNICATION PROTOCOL IDENTIFIER           READ ONLY
@@ -28,27 +37,30 @@ uint32_t device_comm_driver_id = 0xFFFF0000;
 
 
 // --------------------------------------------------------------------------------------
-// ADDRESS      2           EEPROM EMULATOR TEST                                WRITEABLE
+// ADDRESS      2           PWM FRQ MULTIPLER                                   WRITEABLE
 
-uint16_t VirtAddVarTab[NB_OF_VAR] = {0x0};
+uint32_t pwm_frq_multipler = 10; 
 
-uint32_t eeprom_emulator_test_data = 100; 
-
-static void eeprom_emulator_before(COMM_EventType_TypeDef EventType, void * n)
+static void pwm_frq_multipler_init()
 {
-    if (EventType == COMM_READ)
-    {
-        uint16_t data;
-        EE_ReadVariable(0, &data);
-        eeprom_emulator_test_data = data;
-    }
+    #ifdef COMM_SET_INIT
+
+      EE_WriteVariable(0, 1);
+  
+    #endif
+
+    uint16_t temp;
+    EE_ReadVariable(0, &temp);
+    pwm_frq_multipler = temp;
+    __HAL_TIM_SET_AUTORELOAD(&htim4, htim4.Init.Period / temp);   
 }
 
-static void eeprom_emulator_after(COMM_EventType_TypeDef EventType, void * n)
+static void pwm_frq_multiper_after(COMM_EventType_TypeDef EventType, void * n)
 {
     if (EventType == COMM_WRITE)
     {
-        EE_WriteVariable(0, eeprom_emulator_test_data);
+        EE_WriteVariable(0, pwm_frq_multipler);
+        __HAL_TIM_SET_AUTORELOAD(&htim4, 65535 / pwm_frq_multipler);
     }
 }
 
@@ -56,28 +68,28 @@ static void eeprom_emulator_after(COMM_EventType_TypeDef EventType, void * n)
 
 
 // --------------------------------------------------------------------------------------
-// ADDRESS      3           UINT TEST DATA                                    WRITEABLE
+// ADDRESS      3           PWM COMPARE VALUE                                   WRITEABLE
 
-uint32_t inmemory_uint_test_data = 0; 
+int32_t pwm_compare_val = 0;
+
+static void pwm_compare_val_after(COMM_EventType_TypeDef EventType, void * n)
+{
+    if (EventType == COMM_WRITE)
+    {
+        if (pwm_compare_val >= 0)
+        {
+          __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, pwm_compare_val / pwm_frq_multipler);
+          __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, 0);
+        }
+        else
+        {
+          __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, -1 * pwm_compare_val / pwm_frq_multipler);
+          __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, 0);
+        }
+    }
+}
 
 // --------------------------------------------------------------------------------------
-
-
-// --------------------------------------------------------------------------------------
-// ADDRESS      4           INT TEST DATA                                    WRITEABLE
-
-int32_t inmemory_int_test_data = 0; 
-
-// --------------------------------------------------------------------------------------
-
-
-// --------------------------------------------------------------------------------------
-// ADDRESS      5           UINT TEST DATA                                    WRITEABLE
-
-float inmemory_float_test_data = 0; 
-
-// --------------------------------------------------------------------------------------
-
 
 // Communication structure buildup
 
@@ -85,8 +97,12 @@ COMM_Registers_TypeDef COMM_DEF_Reg =
 {
   { COMM_READ_ONLY, COMM_UINT32, &device_comm_protocol_id,      NULL,                           NULL},                          
   { COMM_READ_ONLY, COMM_UINT32, &device_comm_driver_id,        NULL,                           NULL},
-  { COMM_WRITEABLE, COMM_UINT32, &eeprom_emulator_test_data,    eeprom_emulator_before,         eeprom_emulator_after},   
-  { COMM_WRITEABLE, COMM_UINT32, &inmemory_uint_test_data,      NULL,                           NULL},
-  { COMM_WRITEABLE, COMM_INT32,  &inmemory_int_test_data,       NULL,                           NULL},
-  { COMM_WRITEABLE, COMM_FLOAT,  &inmemory_float_test_data,     NULL,                           NULL}
+  { COMM_WRITEABLE, COMM_UINT32, &pwm_frq_multipler,            NULL,                           pwm_frq_multiper_after},
+  { COMM_WRITEABLE, COMM_INT32,  &pwm_compare_val,              NULL,                           pwm_compare_val_after}   
 };
+
+void COMM_Data_Init()
+{   
+  //  2  PWM FRQ MULTIPLER
+  pwm_frq_multipler_init();
+}
